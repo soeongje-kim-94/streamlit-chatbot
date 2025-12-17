@@ -90,7 +90,7 @@ def get_dictionary_chain():
     return dictionary_prompt | llm | StrOutputParser()
 
 
-def get_conversion_chain():
+def get_history_chain():
     llm = create_llm()
 
     conversion_prompt = ChatPromptTemplate.from_messages(
@@ -120,23 +120,50 @@ def get_conversion_chain():
     return conversion_prompt | llm | StrOutputParser()
 
 
+def get_summary_chain():
+    llm = create_llm()
+
+    summary_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "당신의 역할은 대화 이력을 간결하게 요약하는 것입니다.",
+            ),
+            (
+                "human",
+                """
+                아래는 지금까지의 대화 이력입니다.
+                이 대화를 간결하게 요약해주세요.
+                
+                [대화 이력]
+                {history}
+                
+                [요약]
+                """,
+            ),
+        ]
+    )
+
+    return summary_prompt | llm | StrOutputParser()
+
+
 def get_rag_chain(session_id):
     llm = create_llm()
     history = get_history(session_id)
     retriever = get_retriever()
-    
+
     example_prompt = ChatPromptTemplate.from_messages(
         [
             ("human", "{question}"),
             ("ai", "{answer}"),
         ]
     )
-    
+
     few_shot_prompt = FewShotChatMessagePromptTemplate(
         example_prompt=example_prompt,
         examples=answer_examples,
     )
-    
+
     rag_prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -153,8 +180,8 @@ def get_rag_chain(session_id):
                 아래는 이전 대화를 요약한 내용입니다.
                 답변 시 이 맥락을 참고하되, 불필요하게 반복하지는 마세요.
             
-                [대화 이력]
-                {history}
+                [대화 요약]
+                {summary}
                 """,
             ),
             (
@@ -181,7 +208,8 @@ def get_rag_chain(session_id):
         ]
     )
 
-    conversation_chain = get_conversion_chain()
+    history_chain = get_history_chain()
+    summary_chain = get_summary_chain()
 
     return (
         {
@@ -192,22 +220,28 @@ def get_rag_chain(session_id):
             lambda x: {
                 "question": x["question"],
                 "history": x["history"],
-                "standalone_question": conversation_chain.invoke(
+                "standalone_question": history_chain.invoke(
                     {
-                        "question": x,
-                        "history": format_history(history),
+                        "question": x["question"],
+                        "history": x["history"],
                     }
                 ),
             }
         )
+        | RunnableLambda(
+            lambda x: {
+                **x,
+                "summary": summary_chain.invoke({"history": x["history"]}),
+            }
+        )
         | {
             "question": lambda x: x["question"],
-            "history": lambda x: x["history"],
+            "summary": lambda x: x["summary"],
             "docs": lambda x: retriever.invoke(x["standalone_question"]),
         }
         | {
             "question": lambda x: x["question"],
-            "history": lambda x: x["history"],
+            "summary": lambda x: x["summary"],
             "context": lambda x: format_documents(x["docs"]),
         }
         | rag_prompt
