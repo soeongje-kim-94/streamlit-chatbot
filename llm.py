@@ -3,12 +3,14 @@ import os
 from dotenv import load_dotenv
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, FewShotChatMessagePromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnablePassthrough
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langsmith import Client
 from pinecone import Pinecone
+
+from config import answer_examples
 
 # Pinecone
 pinecone_api_key = os.environ.get("PINECONE_API_KEY")
@@ -122,7 +124,19 @@ def get_rag_chain(session_id):
     llm = create_llm()
     history = get_history(session_id)
     retriever = get_retriever()
-
+    
+    example_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("human", "{question}"),
+            ("ai", "{answer}"),
+        ]
+    )
+    
+    few_shot_prompt = FewShotChatMessagePromptTemplate(
+        example_prompt=example_prompt,
+        examples=answer_examples,
+    )
+    
     rag_prompt = ChatPromptTemplate.from_messages(
         [
             (
@@ -132,6 +146,7 @@ def get_rag_chain(session_id):
                 소득세법에 관한 사용자의 질문에 답변해주세요.
                 """,
             ),
+            few_shot_prompt,
             (
                 "system",
                 """
