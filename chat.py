@@ -1,16 +1,15 @@
 import streamlit as st
-from dotenv import load_dotenv
 
-from llm import add_ai_message, get_ai_response
+from llm import recommand_initial_questions, add_ai_message, get_ai_response
 
 st.set_page_config(page_title="소득세 챗봇", page_icon="💬")
 st.title("💬 소득세 챗봇")
 st.caption("소득세 관련 질문에 답변해 드립니다.")
 
-load_dotenv()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    st.markdown(recommand_initial_questions())
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
